@@ -46,11 +46,11 @@ properties:
     dependsOn:
     - Git.Git
   - resource: Microsoft.Windows.Developer/EnableDarkMode
-      directives:
-        description: Enable dark mode
-        allowPrerelease: true
-      settings:
-        Ensure: Present
-        # Use caution when setting `RestartExplorer: true` as this will force explorer to close.
-        RestartExplorer: true # Required to apply changes
+    directives:
+      description: Enable dark mode
+      allowPrerelease: true
+    settings:
+      Ensure: Present
+      # Use caution when setting `RestartExplorer: true` as this will force explorer to close.
+      RestartExplorer: true # Required to apply changes
   configurationVersion: 0.2.0
