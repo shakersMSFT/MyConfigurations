@@ -4,6 +4,21 @@
 
 properties:
   resources:
+  - resource: Disk
+     id: devdrive
+     directives:
+       description: 'Format a new Dev Drive volume onto Disk 0'
+       module: StorageDsc
+       allowPrerelease: true
+     settings:
+       DiskId: '0'
+       DiskIdType: 'Number'
+       DriveLetter: 'S'
+       FSLabel: 'Dev Drive 1'
+       DevDrive: true
+       AllowDestructive: true
+       FSFormat: 'ReFS'
+       Size: '50Gb'
   - resource: Microsoft.WinGet.DSC/WinGetPackage
     directives:
       description: Installing Microsoft.VisualStudioCode
@@ -26,8 +41,16 @@ properties:
       allowPrerelease: true
     settings:
       httpsUrl: https://github.com/microsoft/devhome
-      rootDirectory: C:\Users\Public\Documents\source\repos\devhome
-    id: 'Clone devhome: C:\Users\Public\Documents\source\repos\devhome'
+      rootDirectory: S:\Repos
+    id: 'Clone devhome: S:\Repos'
     dependsOn:
     - Git.Git
+  - resource: Microsoft.Windows.Developer/EnableDarkMode
+      directives:
+        description: Enable dark mode
+        allowPrerelease: true
+      settings:
+        Ensure: Present
+        # Use caution when setting `RestartExplorer: true` as this will force explorer to close.
+        RestartExplorer: true # Required to apply changes
   configurationVersion: 0.2.0
