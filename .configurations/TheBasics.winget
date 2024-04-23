@@ -5,20 +5,20 @@
 properties:
   resources:
   - resource: Disk
-     id: devdrive
-     directives:
-       description: 'Format a new Dev Drive volume onto Disk 0'
-       module: StorageDsc
-       allowPrerelease: true
-     settings:
-       DiskId: '0'
-       DiskIdType: 'Number'
-       DriveLetter: 'S'
-       FSLabel: 'Dev Drive 1'
-       DevDrive: true
-       AllowDestructive: true
-       FSFormat: 'ReFS'
-       Size: '50Gb'
+    id: devdrive
+    directives:
+      description: 'Format a new Dev Drive volume onto Disk 0'
+      module: StorageDsc
+      allowPrerelease: true
+    settings:
+      DiskId: '0'
+      DiskIdType: 'Number'
+      DriveLetter: 'S'
+      FSLabel: 'Dev Drive 1'
+      DevDrive: true
+      AllowDestructive: true
+      FSFormat: 'ReFS'
+      Size: '50Gb'
   - resource: Microsoft.WinGet.DSC/WinGetPackage
     directives:
       description: Installing Microsoft.VisualStudioCode
