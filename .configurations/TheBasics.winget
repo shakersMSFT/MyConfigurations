@@ -4,53 +4,53 @@
 
 properties:
   resources:
-  - resource: Disk
-    id: devdrive
-    directives:
-      description: 'Format a new Dev Drive volume onto Disk 0'
-      module: StorageDsc
-      allowPrerelease: true
-    settings:
-      DiskId: '0'
-      DiskIdType: 'Number'
-      DriveLetter: 'S'
-      FSLabel: 'Dev Drive 1'
-      DevDrive: true
-      AllowDestructive: true
-      FSFormat: 'ReFS'
-      Size: '50Gb'
-  - resource: Microsoft.WinGet.DSC/WinGetPackage
-    directives:
-      description: Installing Microsoft.VisualStudioCode
-      allowPrerelease: true
-    settings:
-      id: "Microsoft.VisualStudioCode"
-      source: winget
-    id: Microsoft.VisualStudioCode
-  - resource: Microsoft.WinGet.DSC/WinGetPackage
-    directives:
-      description: Installing Git.Git
-      allowPrerelease: true
-    settings:
-      id: "Git.Git"
-      source: winget
-    id: Git.Git
-  - resource: GitDsc/GitClone
-    directives:
-      description: 'Cloning: devhome'
-      allowPrerelease: true
-    settings:
-      httpsUrl: https://github.com/microsoft/devhome
-      rootDirectory: S:\Repos
-    id: 'Clone devhome: S:\Repos'
-    dependsOn:
-    - Git.Git
-  - resource: Microsoft.Windows.Developer/EnableDarkMode
-    directives:
-      description: Enable dark mode
-      allowPrerelease: true
-    settings:
-      Ensure: Present
-      # Use caution when setting `RestartExplorer: true` as this will force explorer to close.
-      RestartExplorer: true # Required to apply changes
+    - resource: Disk
+      directives:
+        description: 'Format a new Dev Drive volume onto Disk 0'
+        module: StorageDsc
+        allowPrerelease: true
+      settings:
+        DiskId: '0'
+        DiskIdType: 'Number'
+        DriveLetter: 'D'
+        FSLabel: 'Dev Drive 1'
+        DevDrive: true
+        AllowDestructive: true
+        FSFormat: 'ReFS'
+        Size: '50Gb'
+      id: devdrive
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Installing Microsoft.VisualStudioCode
+        allowPrerelease: true
+      settings:
+        id: "Microsoft.VisualStudioCode"
+        source: winget
+      id: Microsoft.VisualStudioCode
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Installing Git.Git
+        allowPrerelease: true
+      settings:
+        id: "Git.Git"
+        source: winget
+      id: Git.Git
+    - resource: GitDsc/GitClone
+      directives:
+        description: 'Cloning: devhome'
+        allowPrerelease: true
+      settings:
+        httpsUrl: https://github.com/microsoft/devhome
+        rootDirectory: D:\Repos
+      id: 'Clone devhome: D:\Repos'
+      dependsOn:
+      - Git.Git
+    - resource: Microsoft.Windows.Developer/EnableDarkMode
+      directives:
+        description: Enable dark mode
+        allowPrerelease: true
+      settings:
+        Ensure: Present
+        # Use caution when setting `RestartExplorer: true` as this will force explorer to close.
+        RestartExplorer: true # Required to apply changes
   configurationVersion: 0.2.0
