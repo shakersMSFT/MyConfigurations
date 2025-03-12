@@ -34,6 +34,7 @@ properties:
         - VisualStudio Code
       directives:
         description: Install Python Visual Studio Code extension
+        allowPrerelease: true
       settings:
         Name: ms-python.python
         Version: latest
