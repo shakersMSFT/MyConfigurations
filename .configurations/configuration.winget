@@ -19,8 +19,8 @@ properties:
       directives:
         description: Install Python 3.13
       settings:
-        id: Python.Python.3.13
-        source: winget
+        id: 9PNRBTZXMB4Z
+        source: msstore
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: VisualStudio Code
       directives:
