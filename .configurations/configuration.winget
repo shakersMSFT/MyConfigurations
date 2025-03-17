@@ -28,7 +28,7 @@ properties:
       settings:
         id: Microsoft.VisualStudioCode
         source: winget
-    - resource: Microsoft.VSCode.Dsc/Install-VSCodeExtension
+    - resource: Microsoft.VSCode.Dsc/VSCodeExtension
       id: ms-python.python
       dependsOn:
         - VisualStudio Code
@@ -36,8 +36,8 @@ properties:
         description: Install Python Visual Studio Code extension
         allowPrerelease: true
       settings:
-        Name: ms-python.python
-        Version: latest
+        name: ms-python.python
+        exist: true
     # - resource: Microsoft.WinGet.DSC/WinGetPackage
     #   id: Git
     #   directives:
