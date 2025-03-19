@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# reference: https://learn.microsoft.com/windows/apps/get-started/start-here?tabs=vs-2022-17-10
+properties:
+  assertions:
+    - resource: Microsoft.Windows.Developer/OsVersion
+      directives:
+        description: Verify min OS version requirement
+      settings:
+        MinVersion: '10.0.17763'
+  resources:
+    - resource: Microsoft.Windows.Developer/DeveloperMode
+      directives:
+        description: Enable Developer Mode
+      settings:
+        Ensure: Present
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: vsPackage
+      directives:
+        description: Install Visual Studio 2022 Community
+      settings:
+        id: Microsoft.VisualStudio.2022.Community
+        source: winget
+    - resource: Microsoft.VisualStudio.DSC/VSComponents
+      dependsOn:
+        - vsPackage
+      directives:
+        description: Install required VS workloads from vsconfig file
+      settings:
+        productId: Microsoft.VisualStudio.Product.Community
+        channelId: VisualStudio.17.Release
+        Components: Microsoft.VisualStudio.Workload.Universal
+        includeRecommended: true
+  configurationVersion: 0.2.0
