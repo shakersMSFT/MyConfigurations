@@ -5,12 +5,14 @@ properties:
     - resource: Microsoft.Windows.Developer/OsVersion
       directives:
         description: Verify min OS version requirement
+        allowPrerelease: true
       settings:
         MinVersion: '10.0.17763'
   resources:
     - resource: Microsoft.Windows.Developer/DeveloperMode
       directives:
         description: Enable Developer Mode
+        allowPrerelease: true
       settings:
         Ensure: Present
     - resource: Microsoft.WinGet.DSC/WinGetPackage
