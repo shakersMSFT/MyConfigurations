@@ -166,7 +166,10 @@ properties:
     # ---------- Copilot CLI config sync ----------
     # Links ~/.copilot (instructions, agents, skills, voice profiles) to the
     # shared OneDrive copy and reinstalls MCP servers and plugins.
-    # No-ops with a clear message if OneDrive has not synced yet.
+    #
+    # This runs in the same process that started the configuration, so it must
+    # re-read PATH from the registry: pwsh and copilot were only just added by
+    # the package resources above and are not in this process's environment.
     - resource: PSDscResources/Script
       directives:
         description: Link Copilot CLI config from OneDrive
@@ -179,14 +182,40 @@ properties:
           $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
           [bool]($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))
         SetScript: |
-          $od = $env:OneDriveCommercial; if (-not $od) { $od = $env:OneDrive }
-          if (-not $od) { Write-Warning 'OneDrive not signed in yet; skipping. Re-run the sync script later.'; return }
+          $env:Path = @(
+            [Environment]::GetEnvironmentVariable('Path','Machine'),
+            [Environment]::GetEnvironmentVariable('Path','User')
+          ) -join ';'
+
+          $od = $env:OneDriveCommercial
+          if (-not $od) { $od = $env:OneDrive }
+          if (-not $od) {
+            Write-Warning 'OneDrive is not signed in. Sign in, wait for CopilotConfig to sync, then run:'
+            Write-Warning '  pwsh -File "<OneDrive>\CopilotConfig\Sync-CopilotConfig.ps1"'
+            return
+          }
+
           $script = Join-Path $od 'CopilotConfig\Sync-CopilotConfig.ps1'
-          if (-not (Test-Path $script)) { Write-Warning "Not synced down yet: $script"; return }
-          if (-not (Test-Path (Join-Path $env:USERPROFILE '.copilot'))) { Write-Warning 'Launch Copilot CLI once first, then re-run the sync script.'; return }
-          & pwsh -NoProfile -ExecutionPolicy Bypass -File $script
+          # OneDrive may still be downloading; give it a chance before giving up.
+          $deadline = (Get-Date).AddMinutes(5)
+          while (-not (Test-Path $script) -and (Get-Date) -lt $deadline) {
+            Write-Verbose 'Waiting for OneDrive to sync CopilotConfig...'
+            Start-Sleep -Seconds 15
+          }
+          if (-not (Test-Path $script)) {
+            Write-Warning "CopilotConfig has not synced down yet: $script"
+            Write-Warning 'Re-run that script once OneDrive finishes.'
+            return
+          }
+
+          $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+          if (-not $pwsh) { $pwsh = 'C:\Program Files\PowerShell\7\pwsh.exe' }
+          if (-not (Test-Path $pwsh)) { $pwsh = 'powershell.exe' }
+
+          & $pwsh -NoProfile -ExecutionPolicy Bypass -File $script
       id: copilotConfigSync
       dependsOn:
+        - powerShell7
         - copilotCli
 
   configurationVersion: 0.2.0
