@@ -163,4 +163,30 @@ properties:
       dependsOn:
         - vsCode
 
+    # ---------- Copilot CLI config sync ----------
+    # Links ~/.copilot (instructions, agents, skills, voice profiles) to the
+    # shared OneDrive copy and reinstalls MCP servers and plugins.
+    # No-ops with a clear message if OneDrive has not synced yet.
+    - resource: PSDscResources/Script
+      directives:
+        description: Link Copilot CLI config from OneDrive
+        allowPrerelease: true
+      settings:
+        GetScript: |
+          @{ Result = (Test-Path (Join-Path $env:USERPROFILE '.copilot\agents')) }
+        TestScript: |
+          $link = Join-Path $env:USERPROFILE '.copilot\agents'
+          $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
+          [bool]($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))
+        SetScript: |
+          $od = $env:OneDriveCommercial; if (-not $od) { $od = $env:OneDrive }
+          if (-not $od) { Write-Warning 'OneDrive not signed in yet; skipping. Re-run the sync script later.'; return }
+          $script = Join-Path $od 'CopilotConfig\Sync-CopilotConfig.ps1'
+          if (-not (Test-Path $script)) { Write-Warning "Not synced down yet: $script"; return }
+          if (-not (Test-Path (Join-Path $env:USERPROFILE '.copilot'))) { Write-Warning 'Launch Copilot CLI once first, then re-run the sync script.'; return }
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File $script
+      id: copilotConfigSync
+      dependsOn:
+        - copilotCli
+
   configurationVersion: 0.2.0
