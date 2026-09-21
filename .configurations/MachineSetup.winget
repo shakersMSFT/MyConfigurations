@@ -189,22 +189,36 @@ properties:
 
           $od = $env:OneDriveCommercial
           if (-not $od) { $od = $env:OneDrive }
-          if (-not $od) {
-            Write-Warning 'OneDrive is not signed in. Sign in, wait for CopilotConfig to sync, then run:'
-            Write-Warning '  pwsh -File "<OneDrive>\CopilotConfig\Sync-CopilotConfig.ps1"'
+
+          # Prefer the copy that ships next to this configuration; fall back to
+          # OneDrive so the script is still reachable if run from elsewhere.
+          $candidates = @(
+            '${WinGetConfigRoot}\..\scripts\Sync-CopilotConfig.ps1'
+            if ($od) { Join-Path $od 'CopilotConfig\Sync-CopilotConfig.ps1' }
+          )
+          $script = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
+          if (-not $script) {
+            Write-Warning 'Sync-CopilotConfig.ps1 not found next to this configuration or in OneDrive.'
             return
           }
 
-          $script = Join-Path $od 'CopilotConfig\Sync-CopilotConfig.ps1'
-          # OneDrive may still be downloading; give it a chance before giving up.
+          if (-not $od) {
+            Write-Warning 'OneDrive is not signed in, so there is no shared config to link to yet.'
+            Write-Warning "Sign in, wait for CopilotConfig to sync, then run: pwsh -File `"$script`""
+            return
+          }
+
+          # OneDrive may still be downloading the shared content.
+          $shared = Join-Path $od 'CopilotConfig\plugins.json'
           $deadline = (Get-Date).AddMinutes(5)
-          while (-not (Test-Path $script) -and (Get-Date) -lt $deadline) {
+          while (-not (Test-Path $shared) -and (Get-Date) -lt $deadline) {
             Write-Verbose 'Waiting for OneDrive to sync CopilotConfig...'
             Start-Sleep -Seconds 15
           }
-          if (-not (Test-Path $script)) {
-            Write-Warning "CopilotConfig has not synced down yet: $script"
-            Write-Warning 'Re-run that script once OneDrive finishes.'
+          if (-not (Test-Path $shared)) {
+            Write-Warning 'CopilotConfig has not synced down from OneDrive yet.'
+            Write-Warning "Re-run once it finishes: pwsh -File `"$script`""
             return
           }
 
