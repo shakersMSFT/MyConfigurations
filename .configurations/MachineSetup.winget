@@ -1,0 +1,166 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# Full machine setup from scratch: Windows settings + apps + VS Code extensions.
+# Run with: winget configure .\.configurations\MachineSetup.winget
+#
+# Only the registry resources request elevation. WinGet prompts for UAC once and
+# splits execution across an elevated process and a normal-user process, so the
+# per-user installers (Spotify, Obsidian, VS Code) still land in the right place.
+
+properties:
+  assertions:
+    - resource: Microsoft.Windows.Developer/OsVersion
+      directives:
+        description: Verify minimum OS version (Windows 10 2004 / 19041) for Intelligent Terminal
+        allowPrerelease: true
+      settings:
+        MinVersion: '10.0.19041'
+      id: osVersion
+
+  resources:
+    # ---------- Windows settings ----------
+    - resource: PSDscResources/Registry
+      directives:
+        description: Enable "End task" in the taskbar right-click menu
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        Key: 'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\TaskbarDeveloperSettings'
+        ValueName: 'TaskbarEndTask'
+        ValueType: 'Dword'
+        ValueData: '1'
+        Ensure: Present
+        Force: true
+      id: enableEndTask
+
+    - resource: PSDscResources/Registry
+      directives:
+        description: Enable sudo in inline mode
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        Key: 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo'
+        ValueName: 'Enabled'
+        ValueType: 'Dword'
+        # 0 = disabled, 1 = new window, 2 = input closed, 3 = inline
+        ValueData: '3'
+        Ensure: Present
+        Force: true
+      id: enableSudo
+
+    # ---------- Packages (latest stable) ----------
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install PowerShell 7
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.PowerShell'
+        source: winget
+        useLatest: true
+      id: powerShell7
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Oh My Posh
+        allowPrerelease: true
+      settings:
+        id: 'JanDeDobbeleer.OhMyPosh'
+        source: winget
+        useLatest: true
+      id: ohMyPosh
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install GitHub Copilot app
+        allowPrerelease: true
+      settings:
+        id: 'GitHub.CopilotApp'
+        source: winget
+        useLatest: true
+      id: copilotApp
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install GitHub Copilot CLI
+        allowPrerelease: true
+      settings:
+        id: 'GitHub.Copilot'
+        source: winget
+        useLatest: true
+      id: copilotCli
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Visual Studio Code
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.VisualStudioCode'
+        source: winget
+        useLatest: true
+      id: vsCode
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Intelligent Terminal
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.IntelligentTerminal'
+        source: winget
+        useLatest: true
+      id: intelligentTerminal
+      dependsOn:
+        - osVersion
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install PowerToys
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.PowerToys'
+        source: winget
+        useLatest: true
+      id: powerToys
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Spotify
+        allowPrerelease: true
+      settings:
+        id: 'Spotify.Spotify'
+        source: winget
+        useLatest: true
+      id: spotify
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Obsidian
+        allowPrerelease: true
+      settings:
+        id: 'Obsidian.Obsidian'
+        source: winget
+        useLatest: true
+      id: obsidian
+
+    # ---------- VS Code extensions ----------
+    - resource: Microsoft.VSCode.Dsc/VSCodeExtension
+      directives:
+        description: Install the GitHub Copilot extension for VS Code
+        allowPrerelease: true
+      settings:
+        Name: 'GitHub.copilot'
+        Exist: true
+      id: copilotExtension
+      dependsOn:
+        - vsCode
+
+    - resource: Microsoft.VSCode.Dsc/VSCodeExtension
+      directives:
+        description: Install the GitHub Copilot Chat extension for VS Code
+        allowPrerelease: true
+      settings:
+        Name: 'GitHub.copilot-chat'
+        Exist: true
+      id: copilotChatExtension
+      dependsOn:
+        - vsCode
+
+  configurationVersion: 0.2.0
