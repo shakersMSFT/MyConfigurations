@@ -192,7 +192,21 @@ properties:
         TestScript: |
           $link = Join-Path $env:USERPROFILE '.copilot\agents'
           $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
-          [bool]($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))
+          $od = $env:OneDriveCommercial
+          if (-not $od) { $od = $env:OneDrive }
+          if (-not $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $od) {
+            return $false
+          }
+          $target = $item.Target | Select-Object -First 1
+          if (-not $target) { return $false }
+          try {
+            $expected = [IO.Path]::GetFullPath((Join-Path $od 'CopilotConfig\agents')).TrimEnd('\')
+            $actual = [IO.Path]::GetFullPath($target).TrimEnd('\')
+            [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)
+          }
+          catch {
+            return $false
+          }
         SetScript: |
           $env:Path = @(
             [Environment]::GetEnvironmentVariable('Path','Machine'),
@@ -205,7 +219,7 @@ properties:
           # Prefer the copy that ships next to this configuration; fall back to
           # OneDrive so the script is still reachable if run from elsewhere.
           $candidates = @(
-            '${WinGetConfigRoot}\..\scripts\Sync-CopilotConfig.ps1'
+            "${WinGetConfigRoot}\..\scripts\Sync-CopilotConfig.ps1"
             if ($od) { Join-Path $od 'CopilotConfig\Sync-CopilotConfig.ps1' }
           )
           $script = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
@@ -221,15 +235,29 @@ properties:
             return
           }
 
-          # OneDrive may still be downloading the shared content.
-          $shared = Join-Path $od 'CopilotConfig\plugins.json'
+          # OneDrive may still be downloading the shared content. Plugin state is
+          # optional, so wait for all of the core linked configuration instead.
+          $shared = Join-Path $od 'CopilotConfig'
+          $requiredSharedItems = @(
+            'agents'
+            'skills'
+            'my-writing-voice'
+            'copilot-instructions.md'
+          )
           $deadline = (Get-Date).AddMinutes(5)
-          while (-not (Test-Path $shared) -and (Get-Date) -lt $deadline) {
+          $sharedItemsReady = $false
+          while (-not $sharedItemsReady -and (Get-Date) -lt $deadline) {
+            $sharedItemsReady = @(
+              $requiredSharedItems | Where-Object {
+                Test-Path -LiteralPath (Join-Path $shared $_)
+              }
+            ).Count -eq $requiredSharedItems.Count
+            if ($sharedItemsReady) { break }
             Write-Verbose 'Waiting for OneDrive to sync CopilotConfig...'
             Start-Sleep -Seconds 15
           }
-          if (-not (Test-Path $shared)) {
-            Write-Warning 'CopilotConfig has not synced down from OneDrive yet.'
+          if (-not $sharedItemsReady) {
+            Write-Warning 'The core CopilotConfig items have not synced down from OneDrive yet.'
             Write-Warning "Re-run once it finishes: pwsh -File `"$script`""
             return
           }
@@ -239,6 +267,9 @@ properties:
           if (-not (Test-Path $pwsh)) { $pwsh = 'powershell.exe' }
 
           & $pwsh -NoProfile -ExecutionPolicy Bypass -File $script
+          if ($LASTEXITCODE -ne 0) {
+            throw "Sync-CopilotConfig.ps1 failed with exit code $LASTEXITCODE."
+          }
       id: copilotConfigSync
       dependsOn:
         - enableDeveloperMode

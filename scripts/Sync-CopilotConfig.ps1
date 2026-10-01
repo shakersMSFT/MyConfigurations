@@ -110,6 +110,20 @@ function New-Link {
     }
 }
 
+function Test-CanCreateFileSymlink {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        return $true
+    }
+
+    $developerMode = Get-ItemPropertyValue `
+        -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' `
+        -Name 'AllowDevelopmentWithoutDevLicense' `
+        -ErrorAction SilentlyContinue
+    [bool]$developerMode
+}
+
 function Sync-LinkedItem {
     param(
         [string] $Name,
@@ -194,8 +208,13 @@ function ConvertTo-Template {
 function Expand-Template {
     param([string] $Text)
 
-    $Text -replace [regex]::Escape('${COPILOT_HOME}'), ($CopilotHome -replace '\\', '\\') `
-          -replace [regex]::Escape('${USERPROFILE}'), ($env:USERPROFILE -replace '\\', '\\')
+    $copilotHomeJson = ConvertTo-Json -InputObject $CopilotHome -Compress
+    $userProfileJson = ConvertTo-Json -InputObject $env:USERPROFILE -Compress
+    $copilotHomeEscaped = $copilotHomeJson.Substring(1, $copilotHomeJson.Length - 2)
+    $userProfileEscaped = $userProfileJson.Substring(1, $userProfileJson.Length - 2)
+
+    $Text = $Text.Replace('${COPILOT_HOME}', $copilotHomeEscaped)
+    $Text.Replace('${USERPROFILE}', $userProfileEscaped)
 }
 
 function Get-InstalledPluginState {
@@ -207,7 +226,11 @@ function Get-InstalledPluginState {
         return [pscustomobject]@{ marketplaces = @(); plugins = @(); available = $false }
     }
 
-    $mkt = (& copilot plugin marketplace list 2>&1) -split "`r?`n"
+    $mktOutput = & copilot plugin marketplace list 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "copilot plugin marketplace list failed with exit code $LASTEXITCODE."
+    }
+    $mkt = $mktOutput -split "`r?`n"
     foreach ($line in $mkt) {
         # Matches: "  - windows-hivemind (URL: https://...)"
         # Local marketplaces are machine-specific paths and are never portable.
@@ -219,7 +242,11 @@ function Get-InstalledPluginState {
         }
     }
 
-    $lst = (& copilot plugin list 2>&1) -split "`r?`n"
+    $listOutput = & copilot plugin list 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "copilot plugin list failed with exit code $LASTEXITCODE."
+    }
+    $lst = $listOutput -split "`r?`n"
     $inInstalled = $false
     foreach ($line in $lst) {
         if ($line -match '^\s*Installed plugins:') { $inInstalled = $true; continue }
@@ -261,6 +288,10 @@ if (-not (Test-Path -LiteralPath $CopilotHome)) {
     }
 }
 
+if (-not $Export -and $LinkedFiles.Count -gt 0 -and -not (Test-CanCreateFileSymlink)) {
+    throw 'Creating copilot-instructions.md as a symbolic link requires Developer Mode or an elevated PowerShell session. Enable Developer Mode and re-run this script.'
+}
+
 if ($Export) {
     Write-Host 'Exporting MCP servers and plugins to OneDrive...' -ForegroundColor White
 
@@ -282,10 +313,15 @@ if ($Export) {
     }
 
     $state = Get-InstalledPluginState
-    if ($PSCmdlet.ShouldProcess($pluginsPath, 'Write plugins.json')) {
-        $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $pluginsPath -Encoding UTF8
+    if (-not $state.available) {
+        Write-Warning 'Plugin state is unavailable; preserving the existing plugins.json.'
     }
-    Write-Host "  [export]  plugins.json ($($state.plugins.Count) plugins, $($state.marketplaces.Count) marketplaces)" -ForegroundColor Green
+    else {
+        if ($PSCmdlet.ShouldProcess($pluginsPath, 'Write plugins.json')) {
+            $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $pluginsPath -Encoding UTF8
+        }
+        Write-Host "  [export]  plugins.json ($($state.plugins.Count) plugins, $($state.marketplaces.Count) marketplaces)" -ForegroundColor Green
+    }
 
     Write-Host ''
     Write-Host 'Export complete.' -ForegroundColor Green
