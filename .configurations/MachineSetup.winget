@@ -190,23 +190,97 @@ properties:
         GetScript: |
           @{ Result = (Test-Path (Join-Path $env:USERPROFILE '.copilot\agents')) }
         TestScript: |
-          $link = Join-Path $env:USERPROFILE '.copilot\agents'
-          $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
           $od = $env:OneDriveCommercial
           if (-not $od) { $od = $env:OneDrive }
-          if (-not $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $od) {
-            return $false
+          if (-not $od) {
+            Write-Warning 'OneDrive is not signed in; CopilotConfig sync is deferred.'
+            return $true
           }
-          $target = $item.Target | Select-Object -First 1
-          if (-not $target) { return $false }
+
+          $shared = Join-Path $od 'CopilotConfig'
+          $requiredSharedItems = @(
+            'agents'
+            'skills'
+            'my-writing-voice'
+            'copilot-instructions.md'
+          )
+          $deadline = (Get-Date).AddMinutes(5)
+          $sharedItemsReady = $false
+          while (-not $sharedItemsReady -and (Get-Date) -lt $deadline) {
+            $sharedItemsReady = @(
+              $requiredSharedItems | Where-Object {
+                Test-Path -LiteralPath (Join-Path $shared $_)
+              }
+            ).Count -eq $requiredSharedItems.Count
+            if ($sharedItemsReady) { break }
+            Write-Verbose 'Waiting for OneDrive to sync CopilotConfig...'
+            Start-Sleep -Seconds 15
+          }
+          if (-not $sharedItemsReady) {
+            Write-Warning 'The core CopilotConfig items have not synced down from OneDrive yet; sync is deferred.'
+            return $true
+          }
+
+          $links = @(
+            @{ Name = 'agents'; Path = 'agents' }
+            @{ Name = 'skills'; Path = 'skills' }
+            @{ Name = 'my-writing-voice'; Path = 'my-writing-voice' }
+            @{ Name = 'copilot-instructions.md'; Path = 'copilot-instructions.md' }
+          )
+          foreach ($link in $links) {
+            $localPath = Join-Path (Join-Path $env:USERPROFILE '.copilot') $link.Name
+            $item = Get-Item -LiteralPath $localPath -Force -ErrorAction SilentlyContinue
+            if (-not $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              return $false
+            }
+            $target = $item.Target | Select-Object -First 1
+            if (-not $target) { return $false }
+            try {
+              $expected = [IO.Path]::GetFullPath((Join-Path $shared $link.Path)).TrimEnd('\')
+              $actual = [IO.Path]::GetFullPath($target).TrimEnd('\')
+              if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
+                return $false
+              }
+            }
+            catch {
+              return $false
+            }
+          }
+
+          $templatePath = Join-Path $shared 'mcp-config.template.json'
+          if (Test-Path -LiteralPath $templatePath) {
+            $copilotHomeJson = ConvertTo-Json -InputObject (Join-Path $env:USERPROFILE '.copilot') -Compress
+            $userProfileJson = ConvertTo-Json -InputObject $env:USERPROFILE -Compress
+            $copilotHomeEscaped = $copilotHomeJson.Substring(1, $copilotHomeJson.Length - 2)
+            $userProfileEscaped = $userProfileJson.Substring(1, $userProfileJson.Length - 2)
+            $expectedMcp = (Get-Content -LiteralPath $templatePath -Raw).Replace('${COPILOT_HOME}', $copilotHomeEscaped).Replace('${USERPROFILE}', $userProfileEscaped)
+            $localMcp = Join-Path (Join-Path $env:USERPROFILE '.copilot') 'mcp-config.json'
+            if (-not (Test-Path -LiteralPath $localMcp) -or (Get-Content -LiteralPath $localMcp -Raw) -cne $expectedMcp) {
+              return $false
+            }
+          }
+
+          $sourceState = foreach ($name in @('mcp-config.template.json', 'plugins.json')) {
+            $path = Join-Path $shared $name
+            if (Test-Path -LiteralPath $path) {
+              "$name`:$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+            }
+            else {
+              "$name`:<missing>"
+            }
+          }
+          $sha256 = [Security.Cryptography.SHA256]::Create()
           try {
-            $expected = [IO.Path]::GetFullPath((Join-Path $od 'CopilotConfig\agents')).TrimEnd('\')
-            $actual = [IO.Path]::GetFullPath($target).TrimEnd('\')
-            [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)
+            $signature = [Convert]::ToBase64String($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes(($sourceState -join "`n"))))
           }
-          catch {
+          finally {
+            $sha256.Dispose()
+          }
+          $statePath = Join-Path (Join-Path $env:USERPROFILE '.copilot') '.machine-setup-sync-state'
+          if (-not (Test-Path -LiteralPath $statePath) -or (Get-Content -LiteralPath $statePath -Raw).Trim() -cne $signature) {
             return $false
           }
+          return $true
         SetScript: |
           $env:Path = @(
             [Environment]::GetEnvironmentVariable('Path','Machine'),
@@ -270,6 +344,25 @@ properties:
           if ($LASTEXITCODE -ne 0) {
             throw "Sync-CopilotConfig.ps1 failed with exit code $LASTEXITCODE."
           }
+
+          $sourceState = foreach ($name in @('mcp-config.template.json', 'plugins.json')) {
+            $path = Join-Path (Join-Path $od 'CopilotConfig') $name
+            if (Test-Path -LiteralPath $path) {
+              "$name`:$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+            }
+            else {
+              "$name`:<missing>"
+            }
+          }
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try {
+            $signature = [Convert]::ToBase64String($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes(($sourceState -join "`n"))))
+          }
+          finally {
+            $sha256.Dispose()
+          }
+          $statePath = Join-Path (Join-Path $env:USERPROFILE '.copilot') '.machine-setup-sync-state'
+          Set-Content -LiteralPath $statePath -Value $signature -Encoding ASCII
       id: copilotConfigSync
       dependsOn:
         - enableDeveloperMode

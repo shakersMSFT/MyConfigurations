@@ -201,8 +201,12 @@ function Sync-LinkedItem {
 function ConvertTo-Template {
     param([string] $Text)
 
-    $Text -replace [regex]::Escape(($CopilotHome -replace '\\', '\\')), '${COPILOT_HOME}' `
-          -replace [regex]::Escape(($env:USERPROFILE -replace '\\', '\\')), '${USERPROFILE}'
+    $copilotHomeJson = ConvertTo-Json -InputObject $CopilotHome -Compress
+    $userProfileJson = ConvertTo-Json -InputObject $env:USERPROFILE -Compress
+    $copilotHomeEscaped = $copilotHomeJson.Substring(1, $copilotHomeJson.Length - 2)
+    $userProfileEscaped = $userProfileJson.Substring(1, $userProfileJson.Length - 2)
+
+    $Text.Replace($copilotHomeEscaped, '${COPILOT_HOME}').Replace($userProfileEscaped, '${USERPROFILE}')
 }
 
 function Expand-Template {
