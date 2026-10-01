@@ -18,6 +18,18 @@ properties:
 
   resources:
     # ---------- Windows settings ----------
+    # Developer Mode is required for the Copilot config sync below: creating
+    # symlinks without it needs an elevated process, and the sync runs as the
+    # current user.
+    - resource: Microsoft.Windows.Developer/DeveloperMode
+      directives:
+        description: Enable Developer Mode
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        Ensure: Present
+      id: enableDeveloperMode
+
     - resource: PSDscResources/Registry
       directives:
         description: Enable "End task" in the taskbar right-click menu
@@ -229,6 +241,7 @@ properties:
           & $pwsh -NoProfile -ExecutionPolicy Bypass -File $script
       id: copilotConfigSync
       dependsOn:
+        - enableDeveloperMode
         - powerShell7
         - copilotCli
 
