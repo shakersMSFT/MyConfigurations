@@ -1,0 +1,372 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+# Full machine setup from scratch: Windows settings + apps + VS Code extensions.
+# Run with: winget configure .\.configurations\MachineSetup.winget
+#
+# Only the registry resources request elevation. WinGet prompts for UAC once and
+# splits execution across an elevated process and a normal-user process, so the
+# per-user installers (Spotify, Obsidian, VS Code) still land in the right place.
+
+properties:
+  assertions:
+    - resource: Microsoft.Windows.Developer/OsVersion
+      directives:
+        description: Verify minimum OS version (Windows 10 2004 / 19041) for Intelligent Terminal
+        allowPrerelease: true
+      settings:
+        MinVersion: '10.0.19041'
+      id: osVersion
+
+  resources:
+    # ---------- Windows settings ----------
+    # Developer Mode is required for the Copilot config sync below: creating
+    # symlinks without it needs an elevated process, and the sync runs as the
+    # current user.
+    - resource: Microsoft.Windows.Developer/DeveloperMode
+      directives:
+        description: Enable Developer Mode
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        Ensure: Present
+      id: enableDeveloperMode
+
+    - resource: PSDscResources/Registry
+      directives:
+        description: Enable "End task" in the taskbar right-click menu
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        Key: 'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\TaskbarDeveloperSettings'
+        ValueName: 'TaskbarEndTask'
+        ValueType: 'Dword'
+        ValueData: '1'
+        Ensure: Present
+        Force: true
+      id: enableEndTask
+
+    - resource: PSDscResources/Registry
+      directives:
+        description: Enable sudo in inline mode
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        Key: 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo'
+        ValueName: 'Enabled'
+        ValueType: 'Dword'
+        # 0 = disabled, 1 = new window, 2 = input closed, 3 = inline
+        ValueData: '3'
+        Ensure: Present
+        Force: true
+      id: enableSudo
+
+    # ---------- Packages (latest stable) ----------
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install PowerShell 7
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.PowerShell'
+        source: winget
+        useLatest: true
+      id: powerShell7
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Oh My Posh
+        allowPrerelease: true
+      settings:
+        id: 'JanDeDobbeleer.OhMyPosh'
+        source: winget
+        useLatest: true
+      id: ohMyPosh
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install GitHub Copilot app
+        allowPrerelease: true
+      settings:
+        id: 'GitHub.CopilotApp'
+        source: winget
+        useLatest: true
+      id: copilotApp
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install GitHub Copilot CLI
+        allowPrerelease: true
+      settings:
+        id: 'GitHub.Copilot'
+        source: winget
+        useLatest: true
+      id: copilotCli
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Visual Studio Code
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.VisualStudioCode'
+        source: winget
+        useLatest: true
+      id: vsCode
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Intelligent Terminal
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.IntelligentTerminal'
+        source: winget
+        useLatest: true
+      id: intelligentTerminal
+      dependsOn:
+        - osVersion
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install PowerToys
+        allowPrerelease: true
+      settings:
+        id: 'Microsoft.PowerToys'
+        source: winget
+        useLatest: true
+      id: powerToys
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Spotify
+        allowPrerelease: true
+      settings:
+        id: 'Spotify.Spotify'
+        source: winget
+        useLatest: true
+      id: spotify
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      directives:
+        description: Install Obsidian
+        allowPrerelease: true
+      settings:
+        id: 'Obsidian.Obsidian'
+        source: winget
+        useLatest: true
+      id: obsidian
+
+    # ---------- VS Code extensions ----------
+    - resource: Microsoft.VSCode.Dsc/VSCodeExtension
+      directives:
+        description: Install the GitHub Copilot extension for VS Code
+        allowPrerelease: true
+      settings:
+        Name: 'GitHub.copilot'
+        Exist: true
+      id: copilotExtension
+      dependsOn:
+        - vsCode
+
+    - resource: Microsoft.VSCode.Dsc/VSCodeExtension
+      directives:
+        description: Install the GitHub Copilot Chat extension for VS Code
+        allowPrerelease: true
+      settings:
+        Name: 'GitHub.copilot-chat'
+        Exist: true
+      id: copilotChatExtension
+      dependsOn:
+        - vsCode
+
+    # ---------- Copilot CLI config sync ----------
+    # Links ~/.copilot (instructions, agents, skills, voice profiles) to the
+    # shared OneDrive copy and reinstalls MCP servers and plugins.
+    #
+    # This runs in the same process that started the configuration, so it must
+    # re-read PATH from the registry: pwsh and copilot were only just added by
+    # the package resources above and are not in this process's environment.
+    - resource: PSDscResources/Script
+      directives:
+        description: Link Copilot CLI config from OneDrive
+        allowPrerelease: true
+      settings:
+        GetScript: |
+          @{ Result = (Test-Path (Join-Path $env:USERPROFILE '.copilot\agents')) }
+        TestScript: |
+          $od = $env:OneDriveCommercial
+          if (-not $od) { $od = $env:OneDrive }
+          if (-not $od) {
+            Write-Warning 'OneDrive is not signed in; CopilotConfig sync is deferred.'
+            return $true
+          }
+
+          $shared = Join-Path $od 'CopilotConfig'
+          $requiredSharedItems = @(
+            'agents'
+            'skills'
+            'my-writing-voice'
+            'copilot-instructions.md'
+          )
+          $deadline = (Get-Date).AddMinutes(5)
+          $sharedItemsReady = $false
+          while (-not $sharedItemsReady -and (Get-Date) -lt $deadline) {
+            $sharedItemsReady = @(
+              $requiredSharedItems | Where-Object {
+                Test-Path -LiteralPath (Join-Path $shared $_)
+              }
+            ).Count -eq $requiredSharedItems.Count
+            if ($sharedItemsReady) { break }
+            Write-Verbose 'Waiting for OneDrive to sync CopilotConfig...'
+            Start-Sleep -Seconds 15
+          }
+          if (-not $sharedItemsReady) {
+            Write-Warning 'The core CopilotConfig items have not synced down from OneDrive yet; sync is deferred.'
+            return $true
+          }
+
+          $links = @(
+            @{ Name = 'agents'; Path = 'agents' }
+            @{ Name = 'skills'; Path = 'skills' }
+            @{ Name = 'my-writing-voice'; Path = 'my-writing-voice' }
+            @{ Name = 'copilot-instructions.md'; Path = 'copilot-instructions.md' }
+          )
+          foreach ($link in $links) {
+            $localPath = Join-Path (Join-Path $env:USERPROFILE '.copilot') $link.Name
+            $item = Get-Item -LiteralPath $localPath -Force -ErrorAction SilentlyContinue
+            if (-not $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              return $false
+            }
+            $target = $item.Target | Select-Object -First 1
+            if (-not $target) { return $false }
+            try {
+              $expected = [IO.Path]::GetFullPath((Join-Path $shared $link.Path)).TrimEnd('\')
+              $actual = [IO.Path]::GetFullPath($target).TrimEnd('\')
+              if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
+                return $false
+              }
+            }
+            catch {
+              return $false
+            }
+          }
+
+          $templatePath = Join-Path $shared 'mcp-config.template.json'
+          if (Test-Path -LiteralPath $templatePath) {
+            $copilotHomeJson = ConvertTo-Json -InputObject (Join-Path $env:USERPROFILE '.copilot') -Compress
+            $userProfileJson = ConvertTo-Json -InputObject $env:USERPROFILE -Compress
+            $copilotHomeEscaped = $copilotHomeJson.Substring(1, $copilotHomeJson.Length - 2)
+            $userProfileEscaped = $userProfileJson.Substring(1, $userProfileJson.Length - 2)
+            $expectedMcp = (Get-Content -LiteralPath $templatePath -Raw).Replace('${COPILOT_HOME}', $copilotHomeEscaped).Replace('${USERPROFILE}', $userProfileEscaped)
+            $localMcp = Join-Path (Join-Path $env:USERPROFILE '.copilot') 'mcp-config.json'
+            if (-not (Test-Path -LiteralPath $localMcp) -or (Get-Content -LiteralPath $localMcp -Raw) -cne $expectedMcp) {
+              return $false
+            }
+          }
+
+          $sourceState = foreach ($name in @('mcp-config.template.json', 'plugins.json')) {
+            $path = Join-Path $shared $name
+            if (Test-Path -LiteralPath $path) {
+              "$name`:$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+            }
+            else {
+              "$name`:<missing>"
+            }
+          }
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try {
+            $signature = [Convert]::ToBase64String($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes(($sourceState -join "`n"))))
+          }
+          finally {
+            $sha256.Dispose()
+          }
+          $statePath = Join-Path (Join-Path $env:USERPROFILE '.copilot') '.machine-setup-sync-state'
+          if (-not (Test-Path -LiteralPath $statePath) -or (Get-Content -LiteralPath $statePath -Raw).Trim() -cne $signature) {
+            return $false
+          }
+          return $true
+        SetScript: |
+          $env:Path = @(
+            [Environment]::GetEnvironmentVariable('Path','Machine'),
+            [Environment]::GetEnvironmentVariable('Path','User')
+          ) -join ';'
+
+          $od = $env:OneDriveCommercial
+          if (-not $od) { $od = $env:OneDrive }
+
+          # Prefer the copy that ships next to this configuration; fall back to
+          # OneDrive so the script is still reachable if run from elsewhere.
+          $candidates = @(
+            "${WinGetConfigRoot}\..\scripts\Sync-CopilotConfig.ps1"
+            if ($od) { Join-Path $od 'CopilotConfig\Sync-CopilotConfig.ps1' }
+          )
+          $script = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
+          if (-not $script) {
+            Write-Warning 'Sync-CopilotConfig.ps1 not found next to this configuration or in OneDrive.'
+            return
+          }
+
+          if (-not $od) {
+            Write-Warning 'OneDrive is not signed in, so there is no shared config to link to yet.'
+            Write-Warning "Sign in, wait for CopilotConfig to sync, then run: pwsh -File `"$script`""
+            return
+          }
+
+          # OneDrive may still be downloading the shared content. Plugin state is
+          # optional, so wait for all of the core linked configuration instead.
+          $shared = Join-Path $od 'CopilotConfig'
+          $requiredSharedItems = @(
+            'agents'
+            'skills'
+            'my-writing-voice'
+            'copilot-instructions.md'
+          )
+          $deadline = (Get-Date).AddMinutes(5)
+          $sharedItemsReady = $false
+          while (-not $sharedItemsReady -and (Get-Date) -lt $deadline) {
+            $sharedItemsReady = @(
+              $requiredSharedItems | Where-Object {
+                Test-Path -LiteralPath (Join-Path $shared $_)
+              }
+            ).Count -eq $requiredSharedItems.Count
+            if ($sharedItemsReady) { break }
+            Write-Verbose 'Waiting for OneDrive to sync CopilotConfig...'
+            Start-Sleep -Seconds 15
+          }
+          if (-not $sharedItemsReady) {
+            Write-Warning 'The core CopilotConfig items have not synced down from OneDrive yet.'
+            Write-Warning "Re-run once it finishes: pwsh -File `"$script`""
+            return
+          }
+
+          $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+          if (-not $pwsh) { $pwsh = 'C:\Program Files\PowerShell\7\pwsh.exe' }
+          if (-not (Test-Path $pwsh)) { $pwsh = 'powershell.exe' }
+
+          & $pwsh -NoProfile -ExecutionPolicy Bypass -File $script
+          if ($LASTEXITCODE -ne 0) {
+            throw "Sync-CopilotConfig.ps1 failed with exit code $LASTEXITCODE."
+          }
+
+          $sourceState = foreach ($name in @('mcp-config.template.json', 'plugins.json')) {
+            $path = Join-Path (Join-Path $od 'CopilotConfig') $name
+            if (Test-Path -LiteralPath $path) {
+              "$name`:$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+            }
+            else {
+              "$name`:<missing>"
+            }
+          }
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try {
+            $signature = [Convert]::ToBase64String($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes(($sourceState -join "`n"))))
+          }
+          finally {
+            $sha256.Dispose()
+          }
+          $statePath = Join-Path (Join-Path $env:USERPROFILE '.copilot') '.machine-setup-sync-state'
+          Set-Content -LiteralPath $statePath -Value $signature -Encoding ASCII
+      id: copilotConfigSync
+      dependsOn:
+        - enableDeveloperMode
+        - powerShell7
+        - copilotCli
+
+  configurationVersion: 0.2.0
